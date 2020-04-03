@@ -1,0 +1,12 @@
+Reversing
+---------
+- terminals, pseudo terminals
+- fzf reads over stdin, write to stdout, controls terminal via fd 3
+- looking at bash and how it handles fzf
+- looking at fzf bash source code to see what it's doing
+- compiling gdb with debug symbols (turn off optimization)
+- how does readline work
+    - reads char by char
+    - writes back to terminal
+    - fzf can't simply write into the terminal because readline wouldn't see it
+- reversing readline?
