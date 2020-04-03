@@ -1,3 +1,10 @@
+---
+layout: post
+title:  "Reversing GDB with GDB"
+date:   2020-04-02 21:32:10 -0700
+categories: reversing
+---
+
 Reversing
 ---------
 - terminals, pseudo terminals
