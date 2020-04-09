@@ -6,3 +6,5 @@ _site
 .bundle
 vendor/
 todo.txt
+
+!_sass/so-simple/vendor/
