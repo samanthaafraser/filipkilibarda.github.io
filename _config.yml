@@ -24,7 +24,7 @@ github_username:  filipkilibarda
 # Build settings
 markdown: kramdown
 # theme: minima
-remote_theme: "mmistakes/so-simple-theme@3.2.0"
+# remote_theme: "mmistakes/so-simple-theme@3.2.0"
 skin: "/assets/css/skins/dark.css"
 
 # Exclude from processing.
