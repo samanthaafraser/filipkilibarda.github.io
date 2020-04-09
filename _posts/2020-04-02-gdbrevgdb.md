@@ -1,10 +1,12 @@
 ---
 layout: post
-title:  "Reversing GDB with GDB"
+title:  "Adding fuzzy history search to GDB"
 date:   2020-04-02 21:32:10 -0700
 categories: reversing
 ---
 
+
+![example](/assets/imgs/fzfgdb.gif)
 
 
 - [TL;DR](#tldr)
@@ -19,8 +21,6 @@ The goal here is to talk through my adventure of getting the popular
 [fuzzy finder, fzf,](https://github.com/junegunn/fzf) to work with GDB's history, just like it works
 with Bash history out of the box.
 
-![example](/assets/imgs/fzfgdb.gif)
-
 GNU GDB is a massive project
 ```bash
 $ fd -e .c | xargs cat | grep -v "^\s*$" | wc -l
@@ -28,7 +28,6 @@ $ fd -e .c | xargs cat | grep -v "^\s*$" | wc -l
 ```
 with about **2.3 million** lines of C source code. So how do we go about making a change to something so
 big?
-
 
 
 ## What you'll get from this post
