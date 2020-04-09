@@ -13,19 +13,47 @@
 # you will see them accessed via {{ site.title }}, {{ site.email }}, and so on.
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
-title: myblog
+title: blog
 email: none
 description: >- # this means to ignore newlines until "baseurl:"
-  A few thoughts
+  description
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 github_username:  filipkilibarda
+locale: en-US
+
+logo: "/assets/imgs/grandwall.jpg"
+
+date_format: "%B %-d, %Y"
+
+read_time: false # reading time estimates, e.g. true
+
+mathjax:
+  enable: false # MathJax equations, e.g. true, false (default)
+  combo:  # "tex-svg" (default), "tex-mml-chtml", etc.: docs.mathjax.org/en/latest/web/components/combined.html
+  tags:  # "none", "ams" (default), "all"
+
+google_fonts:
+  - name: "Source Sans Pro"
+    weights: "400,400i,700,700i"
+  - name: "Lora"
+    weights: "400,400i,700,700i"
+
+# google_analytics: # Google Analytics id, e.g. "UA-NNNNNNNN-N"
+
+# Liquid
+liquid:
+  error_mode: strict
 
 # Build settings
+permalink: /:categories/:title/
 markdown: kramdown
+
 # theme: minima
 # remote_theme: "mmistakes/so-simple-theme@3.2.0"
 skin: "/assets/css/skins/dark.css"
+
+search_full_content: true # can have performance implications for large sites
 
 # Exclude from processing.
 # The following items will not be processed, by default. Create a custom list
@@ -38,3 +66,36 @@ skin: "/assets/css/skins/dark.css"
 #   - vendor/cache/
 #   - vendor/gems/
 #   - vendor/ruby/
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-feed
+  - jekyll-paginate
+
+# Front Matter Defaults
+defaults:
+  # Posts defaults
+  - scope:
+      path: "_posts"
+      type: posts
+    values:
+      layout: post
+      share: true
+
+# Site Author
+author:
+  name: Filip Kilibarda
+  picture: "/assets/imgs/me.png"
+  email:
+  twitter:
+  links:
+    - title:
+      url:
+      icon:
+
+# Footer Links
+footer_links:
+  - title: Feed
+    url: atom.xml
+    icon: fas fa-rss-square
