@@ -1,20 +1,17 @@
 ---
-layout: page
 title: About
+layout: page
 permalink: /about/
+image:
+  path: /assets/imgs/wedgemount_cropped.png
+  caption: "Ascent of Wedge Mountain, BC, July 4 2016"
 ---
 
-boop
+Currently living in the beautiful Vancouver, BC, where I recently finished my undergrad degree in
+Computer Science.
 
-<!--
-You can find the source code for Minima at GitHub:
-[jekyll][jekyll-organization] /
-[minima](https://github.com/jekyll/minima)
-
-You can find the source code for Jekyll at GitHub:
-[jekyll][jekyll-organization] /
-[jekyll](https://github.com/jekyll/jekyll)
-
-
-[jekyll-organization]: https://github.com/jekyll
--->
+I spent the last year playing in Capture the Flag competitions with the 
+[newly founded team](https://ctftime.org/team/73723) out of UBC, where thanks to the other 
+wonderful people in our group, I've learned **tons** about the world of Computers in general and
+software security in particular. Special thanks to [Robert Xiao](https://www.robertxiao.ca/) for 
+all the work he's put into teaching us.
