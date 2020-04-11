@@ -12,6 +12,6 @@ Computer Science.
 
 I spent the last year playing in Capture the Flag competitions with the 
 [newly founded team](https://ctftime.org/team/73723) out of UBC, where thanks to the other 
-wonderful people in our group, I've learned **tons** about the world of Computers in general and
-software security in particular. Special thanks to [Robert Xiao](https://www.robertxiao.ca/) for 
-all the work he's put into teaching us.
+wonderful people in our group, I've learned **tons** about the world of computers and software
+security in particular. Special thanks to [Robert Xiao](https://www.robertxiao.ca/) for all the work
+he's put into teaching us.
