@@ -306,13 +306,111 @@ Grab the latest from [GNU bash downloads](https://ftp.gnu.org/gnu/bash/)
 - know that both Bash and GDB use Readline
 
 GDB doesn't give us the `bind -x` command like Bash does, so our quickest way forward is to just see
-how Bash implements `bind -x` and try to replicate it in GDB.
+how Bash implements `bind -x` and try to replicate a small part of that in GDB.
+
+The challenge is to pinpoint exactly which function in Bash executes the custom command. TODO
+elaborate on where you got the idea "custom command" from.
+
+OPTION 1: There are many ways to do this and you can get quite creative with this part. I'll use
+GDB and `strace`.
+
+OPTION 2: There are a couple of ways *that I thought of* for figuring this out. One would be to run Bash with
+
+```bash
+valgrind --tool=callgrind bin/bash
+```
+
+then take a look at the call graph using KCacheGrind.
+
+But GDB itself is an epic tool, and we can get this done with GDB really quickly.
+
+First, it's helpful to download and compile Bash with debug symbols in case your system's Bash is
+stripped [Download and Compile Bash](#download-and-compile-bash). You can check if your system's
+Bash is stripped by running
+
+```bash
+$ file /bin/bash
+/bin/bash: ELF 64-bit LSB ... for GNU/Linux 3.2.0, stripped
+```
+
+We'll use the `strace` command to trace the system calls that Bash makes while we press `Ctrl-r`,
+then use that information to set a catchpoint in GDB.
+
+Run the newly compiled Bash and grab it's PID
+
+```bash
+$ pgrep -n bash # PID of the youngest bash process
+6225
+```
+
+Then attach with `strace`
+
+```bash
+$ strace -p 6225
+strace: Process 6225 attached
+pselect6(1, [0], NULL, NULL, NULL, {[], 8}
+```
+
+Now we can interact with Bash and watch the system calls that it makes when we press `Ctrl-r`.
+
+```bash
+$ strace -p 6225
+strace: Process 6225 attached
+...
+pipe([5, 6])                            = 0
+clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID| ...
+setpgid(6374, 6225)                     = 0
+...
+```
+
+The most interesting line in the output is the call to `clone`, which is one of the system calls for
+creating a new process (presumably the Fzf process). So if we could stop the Bash process in GDB at
+the point where it makes the `clone` call, we could examine the backtrace to see which functions
+were called leading up to that!
+
+Kill the `strace` process and run `gdb -p 6225` followed by `catch syscall clone` and `continue`.
+Pressing `Ctrl-r` in Bash now stops us at the syscall in GDB. The `backtrace` or `bt` command will
+dump out the call stack.
+
+```bash
+...
+#31 0x5654f528bec9 in parse_and_execute .. builtins/evalstring.c:436
+#32 0x5654f527a2e9 in bash_execute_unix_command ...
+#33 0x5654f52ac83d in _rl_dispatch_subseq lib/readline/readline.c:852
+#34 0x5654f52acd21 in _rl_dispatch ... lib/readline/readline.c:798
+...
+```
+
+The function is ~100 lines, most of which aren't useful, but the general structure gives us an idea
+of what to do in GDB.
+
+```C
+static int
+bash_execute_unix_command (count, key)
+     int count;	/* ignored */
+     int key;
+{
+  int type;
+  register int i, r;
+  intmax_t mi;
+  sh_parser_state_t ps;
+  char *cmd, *value, *ce, old_ch;
+  SHELL_VAR *v;
+  char ibuf[INT_STRLEN_BOUND(int) + 1];
+
+  rl_crlf ();	/* move to a new line */
+
+  r = parse_and_execute (savestring (cmd), "bash_execute_unix_command", SEVAL_NOHIST|SEVAL_NOFREE);
+
+  rl_forced_update_display ();
+
+  return 0;
+```
+
 
 A quick way to figure this out is to just run Bash **with Fzf history `Ctrl-r` binding** under a
 debugger and see which functions it executes. For that we'll need to compile Bash with debug
 symbols [Download and Compile Bash](#download-and-compile-bash).
-
-From our earlier static analysis, we know that GDB calls `rl_reverse_search_history`
 
 
 <a name="modify"></a>
@@ -367,7 +465,11 @@ It would be tricky
   - inputrc
   - shell cmd
   - command cmd
+  - valgrind
+  - KCacheGrind
+  - gdb catchpoint
 - take smaller pics of the github issue to reduce cognitive overhead
+- change "hitting" to "pressing"
 
 
 
@@ -408,6 +510,7 @@ CFLAGS="-ggdb -Og" ../gdb-9.1/configure \
 
 # ~5 minutes first time.
 # Following builds will be much faster.
+# gdb binary should appear in bin/ of the build directory
 make -j $(nproc) && make install
 ```
 
@@ -430,6 +533,6 @@ mkdir build-bash-5.0 && cd build-bash-5.0
 # See section on compiling GDB for details on flags
 CFLAGS="-ggdb -Og" ../bash-5.0/configure --prefix=$(pwd)
 
-# Quick
+# Bash binary should appear in bin/ of the build directory
 make -j $(nproc) && make install
 ```
