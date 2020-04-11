@@ -206,7 +206,7 @@ The order in which I did things while reversing
 ## TODO section title
 
 - we know that gdb uses readline
-- first grab gdb
+- [Instructions for downloading GDB](#downloading-and-compiling-gdb)
 - so lets just take a look at the code
 
 ```bash
@@ -226,9 +226,58 @@ $ ls -l readline/readline | grep keymap
 ```
 
 - and bam there's the default `Ctrl-r` function
-- so lets replace that with our own function that just prints "hello world!" and recompile
-- TODO section on compiling
-- show gif of "hello world"
+- maybe include point about ctags here for finding the implementation
+- so lets replace that with our own function that just prints "hello world!"
+
+```diff
+readline/readline/emacs_keymap.c
+-  { ISFUNC, rl_reverse_search_history },       /* Control-r */
++  { ISFUNC, my_test },                         /* Control-r */
+
+readline/readline/isearch.c
++int my_test(int sign, int key) {
++  printf("Hello world!");
++  return 0;
++}
+
+readline/readline/readline.h
++extern int my_test PARAMS((int, int));
+```
+
+Now we need to compile [Compiling GDB](#downloading-and-compiling-gdb)
+
+After compiling, the binary should be at `bin/gdb` relative to the build directory.
+
+![Hello world!](/assets/imgs/gdb_helloworld.gif)
+
+Hitting `Ctrl-r` a few times, prints `Hello world!` to the terminal!
+
+When I hit `Enter` after `Ctrl-r`, **nothing happens**, GDB just prints a new line because Readline
+thinks the prompt is empty. All we did was write text to the terminal. Readline is not aware of
+that.
+
+TODO need a section on reversing Readline via Bash
+
+If instead we use `rl_insert_text`, then hitting `Ctrl-r` will truely paste `Hello world!` into our
+current prompt in addition to writing it to the terminal.
+
+```diff
+ int my_test(int sign, int key) {
+-  printf("Hello world!");
++  rl_insert_text("Hello world!");
+   return 0;
+ }
+```
+
+![Hello world!](/assets/imgs/gdb_helloworld2.gif)
+
+Now GDB is trying to run our `Hello world!` string!
+
+So the path forward is clear. 
+- call Fzf
+- pass in the current history
+- get output
+- call `rl_insert_text`
 
 - this isn't as simple as just calling `fzf` in our function.
 - there are a couple of things that we need to do in addition.
@@ -251,6 +300,19 @@ Grab the latest from [GNU bash downloads](https://ftp.gnu.org/gnu/bash/)
   running a custom command (TODO get the name of that func, etc.)
 - and there it is, we'll copy pasta this into GDB's `readline.c` and modify it to our liking.
 
+
+
+## Reversing Bash
+- know that both Bash and GDB use Readline
+
+GDB doesn't give us the `bind -x` command like Bash does, so our quickest way forward is to just see
+how Bash implements `bind -x` and try to replicate it in GDB.
+
+A quick way to figure this out is to just run Bash **with Fzf history `Ctrl-r` binding** under a
+debugger and see which functions it executes. For that we'll need to compile Bash with debug
+symbols [Download and Compile Bash](#download-and-compile-bash).
+
+From our earlier static analysis, we know that GDB calls `rl_reverse_search_history`
 
 
 <a name="modify"></a>
@@ -316,3 +378,58 @@ It would be tricky
 - Copy pasta code from `bash` into `gdb`
 - Compile a custom `gdb`
 - A starting GIF does a better showcase of how actually useful it is to have fzf
+
+
+
+# Downloading and Compiling GDB
+TODO Add section about build reqs
+bison # sometimes
+build-essential
+## Downloading
+```bash
+# See all available versions here https://ftp.gnu.org/gnu/gdb/
+wget https://ftp.gnu.org/gnu/gdb/gdb-9.1.tar.gz
+# Extract
+tar xzvf gdb-9.1.tar.gz
+```
+## Compiling
+```bash
+# This is the directory where we'll build GDB
+mkdir build-gdb-9.1 && cd build-gdb-9.1
+
+# Now configure the build
+# Turn on debugging symbols with CFLAGS.
+# --prefix is the root directory to install resulting files at
+# --enable-targets=all gives us support for all architectures
+CFLAGS="-ggdb -Og" ../gdb-9.1/configure \
+    --prefix=$(pwd) \
+    --with-python=$(which python) \
+    --enable-targets=all
+
+# ~5 minutes first time.
+# Following builds will be much faster.
+make -j $(nproc) && make install
+```
+
+# Downloading and Compiling Bash
+TODO Add section about build reqs
+build-essential
+## Downloading
+```bash
+# See all available versions https://ftp.gnu.org/gnu/bash/
+wget https://ftp.gnu.org/gnu/bash/bash-5.0.tar.gz
+# Extract
+tar xzvf bash-5.0.tar.gz
+```
+
+## Compiling
+```bash
+# This is the directory where we'll build Bash
+mkdir build-bash-5.0 && cd build-bash-5.0
+
+# See section on compiling GDB for details on flags
+CFLAGS="-ggdb -Og" ../bash-5.0/configure --prefix=$(pwd)
+
+# Quick
+make -j $(nproc) && make install
+```
