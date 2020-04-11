@@ -69,7 +69,7 @@ search_full_content: true # can have performance implications for large sites
 plugins:
   - jekyll-seo-tag
   - jekyll-sitemap
-  - jekyll-feed
+  # - jekyll-feed
   - jekyll-paginate
 
 # Front Matter Defaults
@@ -94,7 +94,7 @@ author:
       icon:
 
 # Footer Links
-footer_links:
-  - title: Feed
-    url: atom.xml
-    icon: fas fa-rss-square
+# footer_links:
+#   - title: Feed
+#     url: atom.xml
+#     icon: fas fa-rss-square
