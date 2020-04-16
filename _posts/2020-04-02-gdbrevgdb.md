@@ -6,7 +6,7 @@ categories: reversing
 ---
 
 
-![example](/assets/imgs/fzfgdb.gif)
+![example](/assets/imgs/fzfgdb2.gif)
 
 
 - [TL;DR](#tldr)
@@ -65,6 +65,15 @@ big?
   order to solve some task at hand. Yes there are lots of tools out there that are extremely useful,
   but once you've got the basic tools figured out, you need to get out of the mindset of expecting
   tools to solve all your issues. Start using the tools in creative ways.
+
+
+- TODO might be nice to do a section on how readline reads one char at a time from the terminal
+
+- peices we need to find in order to make this work:
+  - where do we get the in memory history list from?
+    - read readline code for this (`context_init_func`)
+  - how do we paste it into the prompt?
+    - get from bash
 
 
 
@@ -222,11 +231,10 @@ $ ls -l readline/readline | grep keymap
 - everything is nicely commented so just search for `Control-r`
 
 ```c
-  { ISFUNC, rl_fzf_search_history },	/* Control-r */
+  { ISFUNC, rl_reverse_search_history },	/* Control-r */
 ```
 
 - and bam there's the default `Ctrl-r` function
-- maybe include point about ctags here for finding the implementation
 - so lets replace that with our own function that just prints "hello world!"
 
 ```diff
@@ -256,10 +264,79 @@ When I hit `Enter` after `Ctrl-r`, **nothing happens**, GDB just prints a new li
 thinks the prompt is empty. All we did was write text to the terminal. Readline is not aware of
 that.
 
-TODO need a section on reversing Readline via Bash
+How can we get our `Hello world!` string to actually get into the prompt, not just displayed on the
+terminal?
 
-If instead we use `rl_insert_text`, then hitting `Ctrl-r` will truely paste `Hello world!` into our
-current prompt in addition to writing it to the terminal.
+This is, afterall, exactly what reverse search is doing, so if we continue our reverse engineering,
+surely we'll come upon a function that does exactly that.
+
+- a natural step forward is to take a look at how `rl_reverse_search_history` is implemented, and
+  use that as a guide
+
+- `rl_reverse_search_history` calls `rl_search_history`
+
+Simplified version
+
+```C
+static int rl_search_history (int direction, int invoking_key) {
+  _rl_search_cxt *cxt;
+
+  cxt = _rl_isearch_init (direction);
+  rl_display_search (cxt->search_string, cxt->sflags, -1);
+
+  r = -1;
+  for (;;) {
+    c = _rl_search_getchar (cxt);
+    r = _rl_isearch_dispatch (cxt, cxt->lastc);
+    if (r <= 0)
+      break;
+  }
+
+  return (_rl_isearch_cleanup (cxt, r));
+}
+```
+
+- key take aways:
+   - initialize the search (presumably this is where the history list is set up?)
+   - display the search string (`(reverse-i-search)': ...`)
+   - loop
+      - read char
+      - do some action based on which character was typed i.e., either 
+        - update the search string and display the updated search result
+        - end the search and paste the result into the prompt
+
+- looking at `rl_isearch_init`
+```C
+static _rl_search_cxt *_rl_isearch_init (int direction) {
+  ...
+  HIST_ENTRY **hlist = history_list ();
+  ...
+}
+```
+- and the `history_list` function is all we care about really, so that takes a big peice out of the
+  puzzle.
+- Now we know how to get the full history - conveniently, this includes the history entries from
+  both the current session and the file based history from all previous sessions in `.gdb_history`
+  TODO See section on setting up infinite history for all sessions
+- We still haven't answered the question of how to get our `Hello world!` string into the current
+  prompt though
+- unfortunately, it wasn't very clear to me how the result is pasted into the prompt
+- we know that Fzf works out of the box with Bash history search, so we can try our luck reverse
+  engineering how Bash and Fzf work so nicely together. See [Reversing Bash](#reversing-bash)
+- turns out that Bash has a very simple implementation that gives us all the missing peices.
+  - `maybe_make_readline_line` is a function in the Bash project (not in Readline), that basically
+    just populates the prompt with a given string. Internally it calls `rl_insert_text`. We'll just
+    copy paste that whole function from Bash.
+  - `rl_forced_update_display` and `rl_crlf` are a couple of other functions we'll end up using
+
+- TODO add section about `rl_line_buffer`, the current contents of the prompt
+
+Now we have all the missing peices!
+
+Let build this up incrementally. Back to our `Hello world!` example:
+
+If instead we use `rl_insert_text`, instead of just `printf`, then hitting `Ctrl-r` will truely
+paste `Hello world!` into our current prompt in addition to writing it to the terminal.
 
 ```diff
  int my_test(int sign, int key) {
@@ -274,31 +351,30 @@ current prompt in addition to writing it to the terminal.
 Now GDB is trying to run our `Hello world!` string!
 
 So the path forward is clear. 
-- call Fzf
-- pass in the current history
-- get output
-- call `rl_insert_text`
 
-- this isn't as simple as just calling `fzf` in our function.
-- there are a couple of things that we need to do in addition.
-  1. write the history (stored in GDB's memory) into `fzf`'s stdin
-  2. read the result from `fzf` and place it into the current line buffer (TODO link to section
-     about line buffer)
+1. call Fzf
+2. pass in the current history
+3. get output
+4. call `rl_insert_text`
 
-- we want to be FASTTT, so lets minimize our work and just see how Bash does this
-- we know that Bash's `bind -x` allows us to bind custom shell commands to a key and write the
-  output from the command into the current line buffer
-- this is exactly what we want to do so lets just see what the Bash authors did
+1. call Fzf
+  - Set up read and write pipes (via `pipe` syscall)
+  - Fork a new process
+  - launch Fzf via `execve` syscall
+2. pass in the current history
+  - call `history_list` function
+  - write result into write pipe
+  - fzf will receive that as its input
+3. get output
+  - Read from the read pipe (this will be the output of Fzf)
+4. call `maybe_make_readline_line`
+  - Interally this calls `rl_insert_text`
+  - pass in the output we got from Fzf
 
-Grab the latest from [GNU bash downloads](https://ftp.gnu.org/gnu/bash/)
+If you're not interested in a detailed explanation of how to do this, checkout my github page TODO
 
-- run gdb under debugger, set breakpoint at `rl_fzf_search_history`, trigger it, the `bt`, bt will
-  tell us the sequence of ancestor function calls. There we'll see `_rl_dispath`.
-- so set a breakpoint at `_rl_dispath` while debugging Bash.
-- trigger `fzf` search history in Bash with `Ctrl-r`
-- then step throuugh `_rl_dispath` until you get to the corresponding function that implements
-  running a custom command (TODO get the name of that func, etc.)
-- and there it is, we'll copy pasta this into GDB's `readline.c` and modify it to our liking.
+XXX
+
 
 
 
@@ -326,7 +402,7 @@ But GDB itself is an epic tool, and we can get this done with GDB really quickly
 
 First, it's helpful to download and compile Bash with debug symbols in case your system's Bash is
 stripped [Download and Compile Bash](#download-and-compile-bash). You can check if your system's
-Bash is stripped by running
+Bash is stripped by running (*it most likely is*)
 
 ```bash
 $ file /bin/bash
@@ -402,16 +478,23 @@ bash_execute_unix_command (count, key)
 
   r = parse_and_execute (savestring (cmd), "bash_execute_unix_command", SEVAL_NOHIST|SEVAL_NOFREE);
 
+  maybe_make_readline_line (v ? value_cell (v) : 0);
+
   rl_forced_update_display ();
 
   return 0;
 ```
 
+A quick look at the function `maybe_make_readline_line`, shows us that it's responsible for
+populating the prompt with the new command (that was returned from Fzf). Since it's not a core
+Readline function (it's actually a part of Bash), we'll have to copy paste that and reuse it in GDB. 
 
-A quick way to figure this out is to just run Bash **with Fzf history `Ctrl-r` binding** under a
-debugger and see which functions it executes. For that we'll need to compile Bash with debug
-symbols [Download and Compile Bash](#download-and-compile-bash).
+`rl_forced_update_display` is probably responsible for displaying the new prompt with the new
+command so we'll take that over to GDB as well.
 
+`rl_crlf` probably just prints a new line so lets just take that as well.
+
+Now we have all the components we need to get this working!
 
 <a name="modify"></a>
 ## Wait, do we need to modify GDB source to pull this off?
@@ -470,6 +553,7 @@ It would be tricky
   - gdb catchpoint
 - take smaller pics of the github issue to reduce cognitive overhead
 - change "hitting" to "pressing"
+- add section about gdbinit commands that give you inf history
 
 
 
