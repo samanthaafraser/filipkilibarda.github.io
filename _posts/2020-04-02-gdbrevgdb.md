@@ -5,37 +5,72 @@ date:   2020-04-02 21:32:10 -0700
 categories: reversing
 ---
 
+[fzf-github]: https://github.com/junegunn/fzf
+[fzf-gdb-issue]: https://github.com/junegunn/fzf/issues/1516
+[gdb-patch]: https://github.com/filipkilibarda/gdb_fzf_patch
+
+
+## [Get the patch and installation instructions here][gdb-patch]
 
 ![example](/assets/imgs/fzfgdb2.gif)
 
 
 - [TL;DR](#tldr)
 - [What you'll get from this post](#what-youll-get-from-this-post)
-- [Has this been done?](#has-this-been-done)
-- [Wait, do we **really** need to modify GDB source to pull this off?](#modify)
 - [What's `readline`?](#)
+- [Appendix](#appendix)
+  - [Reversing Bash](#reversing-bash)
+  - [Wait, do we **really** need to modify GDB source to pull this off?](#modify)
+  - [Has this been done?](#has-this-been-done)
 
+<br/>
 
+---
 
-The goal here is to talk through my adventure of getting the popular 
-[fuzzy finder, fzf,](https://github.com/junegunn/fzf) to work with GDB's history, just like it works
-with Bash history out of the box.
+<br/>
 
-GNU GDB is a massive project
-```bash
-$ fd -e .c | xargs cat | grep -v "^\s*$" | wc -l
-2291022
-```
-with about **2.3 million** lines of C source code. So how do we go about making a change to something so
-big?
+### A quick note on Bash history and Fzf
 
+Pairing infinite history with Fzf and Bash drastically increased the speed of my workflow, allowing
+my thoughts to flow with much shorter interruptions while recalling old commands.
 
-## What you'll get from this post
-- Tips for quickly nailing down where your changes need to go
-- Static and dynamic anaylsis tips using tools like `ctags`, `gdb`, `strace`
-- A more complete mental model of what happens from the moment I press the key on my keyboard to the
-  moment that my running process receives my keypress.
+My bash history acts as a catalog, and **all it takes** is for me to remember just a word or two of
+an old command, and in a matter of seconds, I've got some long `docker` command from **last year**
+ready to go.
 
+As a CTF player, the speed gains here make a huge difference.
+
+### GDB history and Fzf??
+
+With such significant speed gains at the Bash prompt, I **really** wanted to have this at my GDB
+prompt as well.
+
+But unfortunately, Fzf doesn't support GDB history search out of the box. After reading [a post from
+the author of Fzf][fzf-gdb-issue] where they express complete uncertainty about whether it would be
+possible, I gave up on the idea entirely.
+
+Eventually, the thought crossed my mind that I could just modify GDB itself, rather than trying to
+jig it together with whatever interfaces GDB exposes already, and as it turns out, it's actually not
+too difficult at all.
+
+### Intro
+
+In this post I'll walk through the thought process that I took to reverse engineer the command
+prompt portion of GDBs code base and implement a small but useful modification.
+
+This is primarily targeted at those who might roughly fall into these categories
+- beginner reverse engineer or open source dev
+- intimidated by massive code bases
+- takes too long to understand the code base, so implementing custom changes isn't worth the immense
+  amount of time
+
+I myself was definitely in all of these categories throughout my entire undergrad and after as well.
+After playing in CTFs for a year, I learned a great deal about how everything on my computer works,
+significantly aleviating some of the pains listed above.
+
+So in this post, I hope to shed some light on my reverse engineering and implementation thought
+process, specifically some tips and tricks for static and dynamic analysis that can make you much
+faster.
 
 
 ## Topics
@@ -67,14 +102,16 @@ big?
   tools to solve all your issues. Start using the tools in creative ways.
 
 
-- TODO might be nice to do a section on how readline reads one char at a time from the terminal
+## Infinite GDB history
+You'll also probably want to set up infinite GDB history; add this to `~/.gdbinit`.
 
-- peices we need to find in order to make this work:
-  - where do we get the in memory history list from?
-    - read readline code for this (`context_init_func`)
-  - how do we paste it into the prompt?
-    - get from bash
-
+```bash
+# https://stackoverflow.com/a/3176802/6824752
+set history save on
+set history size unlimited
+set history remove-duplicates unlimited
+set history filename ~/.gdb_eternal_history
+```
 
 
 ## Has this been done? (maybe change this)
@@ -139,15 +176,14 @@ Having a decent understanding of how programs receive input from the keyboard is
 understanding all this.
 
 ```
-                         __________________         ___________            
-    ____________        |                  |       |           |            
-   |            |       |                  |<------| Process   |                   
-   |  Keyboard  |------>|                  |------>|   e.g.    |                  
-   |____________|       |    Terminal      |       | /bin/bash |            
-                        |                  |       |___________|
-                        |                  |                               
-                        |__________________|                                     
-
+                      __________________         ___________ 
+ ____________        |                  |       |           |
+|            |       |                  |<------| Process   |
+|  Keyboard  |------>|                  |------>|   e.g.    |
+|____________|       |    Terminal      |       | /bin/bash |
+                     |                  |       |___________|
+                     |                  |                    
+                     |__________________|                    
 ```
 
 - used to use [terminals](https://en.wikipedia.org/wiki/Computer_terminal).
@@ -162,6 +198,7 @@ understanding all this.
 - the terminal settings can be changed via `stty` command (see `man stty`). For example, you can
   disable `Ctrl-d` and `Ctrl-c` so that it doesn't kill the connected process. There are many
   options. Terminals truely are complicated devices that largely go unnoticed.
+- TODO might be nice to do a section on how readline reads one char at a time from the terminal
 
 ```bash
 $ lsof -p 5606
@@ -267,7 +304,7 @@ that.
 How can we get our `Hello world!` string to actually get into the prompt, not just displayed on the
 terminal?
 
-This is, afterall, exactly what reverse search is doing, so if we continue our reverse engineering,
+This is, after all, exactly what reverse search is doing, so if we continue our reverse engineering,
 surely we'll come upon a function that does exactly that.
 
 - a natural step forward is to take a look at how `rl_reverse_search_history` is implemented, and
@@ -277,7 +314,7 @@ surely we'll come upon a function that does exactly that.
 
 Simplified version
 
-```C
+```c
 static int rl_search_history (int direction, int invoking_key) {
   _rl_search_cxt *cxt;
 
@@ -306,11 +343,11 @@ static int rl_search_history (int direction, int invoking_key) {
         - end the search and paste the result into the prompt
 
 - looking at `rl_isearch_init`
-```C
+```c
 static _rl_search_cxt *_rl_isearch_init (int direction) {
-  ...
-  HIST_ENTRY **hlist = history_list ();
-  ...
+    ...
+    HIST_ENTRY **hlist = history_list ();
+    ...
 }
 ```
 - and the `history_list` function is all we care about really, so that takes a big peice out of the
@@ -376,6 +413,9 @@ If you're not interested in a detailed explanation of how to do this, checkout m
 XXX
 
 
+
+# Appendix
+---
 
 
 ## Reversing Bash
@@ -460,7 +500,7 @@ dump out the call stack.
 The function is ~100 lines, most of which aren't useful, but the general structure gives us an idea
 of what to do in GDB.
 
-```C
+```c
 static int
 bash_execute_unix_command (count, key)
      int count;	/* ignored */
@@ -620,3 +660,10 @@ CFLAGS="-ggdb -Og" ../bash-5.0/configure --prefix=$(pwd)
 # Bash binary should appear in bin/ of the build directory
 make -j $(nproc) && make install
 ```
+
+
+## What you'll get from this post
+- Tips for quickly nailing down where your changes need to go
+- Static and dynamic anaylsis tips using tools like `ctags`, `gdb`, `strace`
+- A more complete mental model of what happens from the moment I press the key on my keyboard to the
+  moment that my running process receives my keypress.
