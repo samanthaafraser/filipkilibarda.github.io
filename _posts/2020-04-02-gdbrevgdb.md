@@ -2,17 +2,17 @@
 layout: post
 title:  "Adding fuzzy history search to GDB"
 date:   2020-04-02 21:32:10 -0700
-categories: reversing
+permalink: posts/gdb-fuzzy-history
+categories: reversing implementation
 ---
+
+![example](/assets/imgs/fzfgdb2.gif)
+
 
 [fzf-github]: https://github.com/junegunn/fzf
 [fzf-gdb-issue]: https://github.com/junegunn/fzf/issues/1516
 [gdb-patch]: https://github.com/filipkilibarda/gdb_fzf_patch
-
-
-## [Get the patch and installation instructions here][gdb-patch]
-
-![example](/assets/imgs/fzfgdb2.gif)
+[gdb-keybindings-docs]: https://ftp.gnu.org/old-gnu/Manuals/gdb/html_node/gdb_246.html
 
 
 - [TL;DR](#tldr)
@@ -25,9 +25,11 @@ categories: reversing
 
 <br/>
 
----
+# [Get the patch and installation instructions here][gdb-patch]
 
 <br/>
+
+
 
 ### A quick note on Bash history and Fzf
 
@@ -39,6 +41,7 @@ an old command, and in a matter of seconds, I've got some long `docker` command 
 ready to go.
 
 As a CTF player, the speed gains here make a huge difference.
+
 
 ### GDB history and Fzf??
 
@@ -53,7 +56,12 @@ Eventually, the thought crossed my mind that I could just modify GDB itself, rat
 jig it together with whatever interfaces GDB exposes already, and as it turns out, it's actually not
 too difficult at all.
 
-### Intro
+
+
+
+
+Intro
+----------------------------------------------------------------------------------------------------
 
 In this post I'll walk through the thought process that I took to reverse engineer the command
 prompt portion of GDBs code base and implement a small but useful modification.
@@ -64,8 +72,8 @@ This is primarily targeted at those who might roughly fall into these categories
 - takes too long to understand the code base, so implementing custom changes isn't worth the immense
   amount of time
 
-I myself was definitely in all of these categories throughout my entire undergrad and after as well.
-After playing in CTFs for a year, I learned a great deal about how everything on my computer works,
+I was definitely in all of these categories throughout my entire undergrad and after as well.  After
+playing in CTFs for a year, I learned a great deal about how everything on my computer works,
 significantly aleviating some of the pains listed above.
 
 So in this post, I hope to shed some light on my reverse engineering and implementation thought
@@ -73,7 +81,109 @@ process, specifically some tips and tricks for static and dynamic analysis that 
 faster.
 
 
-## Topics
+
+
+Writing tips:
+- don't optimize prematurely. Just say what you want to say. Then cut it down later.
+
+
+
+Getting Started
+----------------------------------------------------------------------------------------------------
+A natural place to start, is to take a look at how FZF implements history search in Bash, then try
+to replicate that in some way (in our case we'll be modifying and compiling GDB).
+
+Running the install script for FZF shows that it adds a line `~/.bashrc`
+
+```bash
+[ -f ~/.fzf.bash ] && source ~/.fzf.bash
+```
+
+At the end of `.fzf.bash` we have 
+
+```bash
+source "$HOME/fzf/shell/key-bindings.bash"
+```
+
+And at the end of `key-bindings.bash` we have
+
+```bash
+bind -m emacs-standard -x '"\C-r": __fzf_history__'
+```
+
+`bind` is a Bash builtin command. Normally when we run programs via the Bash prompt, we're actually
+running another file, for example
+
+```bash
+$ which ls
+/bin/ls
+```
+
+Bash builtin commands are different in that they are *built into* the Bash executable. So `which
+bind` shouldn't return anything.
+
+We can issue `man bash` to get a comprehensive explanation of all the builtin commands. To search
+for the `bind` command, type `/` then `\<bind\>`. This will find all occurences of the word `bind`
+where `\<` and `\>` are special characters that match `word start` and `word end` so that we don't
+match strings like `binding` or `key-binding`.
+
+This will lead us to an explanation of the builtin command.
+
+>
+  Bash allows the current readline key bindings to be displayed or modified with the **bind**
+  builtin command.
+
+This leads us to one of our biggest clues. `bind` modifies **readline** keybindings.
+
+So what's Readline?
+
+Readline is one of the most popular text editors that no one knows about :)
+
+[See this for more details](#whats-readline), but basically Readline is a piece of software that's
+compiled into many command line programs, including GDB and Bash, that provides line editing
+capabilties and history. The entire history searching and tracking mechanism in Bash is done by
+Readline.
+
+So from now on, we know that we'll be primarily focused on messing around with Readline, and since
+both Bash and GDB use Readline, we can use Bash as an example to guide how modify GDB's version of
+Readline.
+
+Back to looking at FZF and how it works with Bash.
+
+So this is the entry point for how FZF sets up history search with Bash.
+
+```bash
+bind -m emacs-standard -x '"\C-r": __fzf_history__'
+```
+
+This means that pressing `Ctrl-r` will call `__fzf_history__` and paste the output into the current
+prompt.
+
+So can we do this in GDB?
+
+Unfortunately the `bind` command is not included in the Readline project, it's only in Bash. So we
+can't use `bind` in GDB. But hey, if Bash has a `bind` command, maybe we can just copy paste into
+GDB?
+
+Nevertheless, Readline can still be configured with keybindings even without the `bind` command.
+This is done via the `~/.inputrc` file.
+
+Googling around for "GDB keybindings" lead me to [this page][gdb-keybindings-docs] where they
+talk about how to set up keybindings for GDB. Once again... unfortunately for us, configuring
+keybindings via `~/.inputrc` isn't nearly as powerful and doesn't let us set up keybindings that
+execute custom commands and paste the results into the current prompt.
+
+So we really need to look elsewhere.
+
+See [this section](modify) for a more detailed analysis of whether this can be done without
+modifying GDB.
+
+
+
+
+
+Topics
+----------------------------------------------------------------------------------------------------
 - terminals, pseudo terminals
 - fzf reads over stdin, write to stdout, controls terminal via fd 3
 - looking at bash and how it handles fzf
@@ -87,7 +197,10 @@ faster.
 
 
 
-## Haven't decided where to put these points yet
+
+
+Haven't decided where to put these points yet
+----------------------------------------------------------------------------------------------------
 - reverse engineering is a creative process
 - there's no tool out there that can just automatically tell you everything you need to know
 - know the tools, and combine them creatively to break down the problem as fast you can
@@ -102,75 +215,10 @@ faster.
   tools to solve all your issues. Start using the tools in creative ways.
 
 
-## Infinite GDB history
-You'll also probably want to set up infinite GDB history; add this to `~/.gdbinit`.
-
-```bash
-# https://stackoverflow.com/a/3176802/6824752
-set history save on
-set history size unlimited
-set history remove-duplicates unlimited
-set history filename ~/.gdb_eternal_history
-```
 
 
-## Has this been done? (maybe change this)
-## TODO Section title
-
-We know this works with Bash, so why can't we trivially do this with GDB?
-
-- how does fzf implement history search in Bash
-- fzf inserts this little line at the end of your `.bashrc`
-```bash
-[ -f ~/.fzf.bash ] && source ~/.fzf.bash
-```
-- so lets see what it does
-- at the end of `.fzf.bash` we have 
-```bash
-source "$HOME/fzf/shell/key-bindings.bash"
-```
-- at the end of `key-bindings.bash` we have
-```bash
-bind -m emacs-standard -x '"\C-r": __fzf_history__'
-```
-- checkout `man bash` for details on what `bind -x` does.
-- in `man bash` you'll notice a section titled **Readline Key Bindings**, 
-  [check this out](#whats-readline) if you don't know what Readline does.
-- `Ctrl-r` will call `__fzf_history__` and paste the output into the current Readline line buffer
-- can we do something like this in GDB?
-- googling `GDB keybindings` will quickly [show you](https://stackoverflow.com/a/35801000/6824752)
-  that GDB also uses the Readline library
-- unfortunately I've found that GDB's only mechanism for customizing keybindings is via `~/.inputrc`
-  file, which isn't nearly as flexible as Bash's `bind` builtin command. See 
-  [this](https://ftp.gnu.org/old-gnu/Manuals/gdb/html_node/gdb_246.html) for an example inputrc
-  file. 
-
-
-![this issue](/assets/imgs/githubissue.png)
-
-`bash` and `gdb` both compile `readline` into their binaries, but the key difference is in how
-`bash` and `gdb` expose their internal `readline` keymap to the user.
-
-`bash` has a nice builtin function called `bind`. If you take a look at `fzf`'s keybindings file `fzf/shell/key-bindings.bash`
-
-and `-x` makes it such that the function is immediately executed when the key sequence is pressed
-and the **output is copied into the current line buffer**.
-
-`gdb` doesn't provide such an interface. Instead, it uses the standard `~/.inputrc` file.
-
-```bash
-$ man readline
-...
-INITIALIZATION FILE
-       Readline is customized by putting commands in an initialization file (the  inputrc  file).
-...
-```
-`~/.inputrc` isn't expressive enough for us. It doesn't allow us to execute commands and copy the
-output into the readline buffer.
-
-
-
-## Conceptualizing terminal programs
+Conceptualizing terminal programs
+----------------------------------------------------------------------------------------------------
 
 Having a decent understanding of how programs receive input from the keyboard is useful for
 understanding all this.
@@ -210,31 +258,8 @@ bash    5606   fk    2u   CHR  136,3      0t0        6 /dev/pts/3
 
 
 
-## What happens when you press `Ctrl-r`
-We're ultimately interested in replacing the default `Ctrl-r` behaviour
-```bash
-gdb> 
-(reverse-i-search)`':
-```
-with our own custom command. 
-
-So what writes that `(reverse-i-search)` string to our terminal?
-
-
-
-## REMINDER FOR MYSELF
-The order in which I did things while reversing
-- I poked around gdb source looking at readline specifically
-- I messed around with callgrind
-- I found that `_rl_dispatch` was responsible for choosing the function to exec from the keymap
-- once I had that I decided I'd just copy what bash was doing
-- NOTE the reason I was looking at bash in the first place, was actually just to see how they
-  implemented the function that runs your custom command
-- so set a break at `_rl_dispatch` and started debugging bash
-- then I basically copied bash's implementation to gdb
-
-
-## What's Readline?
+What's Readline?
+---------------------------------------------------------------------------------------------------
 - what is readline
 - [readline](https://en.wikipedia.org/wiki/GNU_Readline)
 - basically it's some code that's typically compiled into interactive command line apps. It provides
@@ -249,7 +274,12 @@ The order in which I did things while reversing
 - when Bash is ready for a new command, it echos a new prompt and hands control over to Readline
   again.
 
-## TODO section title
+
+
+
+
+TODO section title
+----------------------------------------------------------------------------------------------------
 
 - we know that gdb uses readline
 - [Instructions for downloading GDB](#downloading-and-compiling-gdb)
@@ -536,6 +566,23 @@ command so we'll take that over to GDB as well.
 
 Now we have all the components we need to get this working!
 
+
+
+
+## Infinite GDB history
+You'll also probably want to set up infinite GDB history; add this to `~/.gdbinit`.
+
+```bash
+# https://stackoverflow.com/a/3176802/6824752
+set history save on
+set history size unlimited
+set history remove-duplicates unlimited
+set history filename ~/.gdb_eternal_history
+```
+
+
+
+
 <a name="modify"></a>
 ## Wait, do we need to modify GDB source to pull this off?
 
@@ -638,6 +685,9 @@ CFLAGS="-ggdb -Og" ../gdb-9.1/configure \
 make -j $(nproc) && make install
 ```
 
+
+
+
 # Downloading and Compiling Bash
 TODO Add section about build reqs
 build-essential
@@ -660,6 +710,25 @@ CFLAGS="-ggdb -Og" ../bash-5.0/configure --prefix=$(pwd)
 # Bash binary should appear in bin/ of the build directory
 make -j $(nproc) && make install
 ```
+
+
+
+
+![this issue](/assets/imgs/githubissue.png)
+
+
+
+## REMINDER FOR MYSELF
+The order in which I did things while reversing
+- I poked around gdb source looking at readline specifically
+- I messed around with callgrind
+- I found that `_rl_dispatch` was responsible for choosing the function to exec from the keymap
+- once I had that I decided I'd just copy what bash was doing
+- NOTE the reason I was looking at bash in the first place, was actually just to see how they
+  implemented the function that runs your custom command
+- so set a break at `_rl_dispatch` and started debugging bash
+- then I basically copied bash's implementation to gdb
+
 
 
 ## What you'll get from this post
