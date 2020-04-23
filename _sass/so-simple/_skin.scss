@@ -272,8 +272,8 @@ td {
 
 // This highlights inline code
 code.highlighter-rouge {
-  color: $base05;
-  background-color: $base00;
+  color: $base00;               // original: 05
+  background-color: $base04;    // original: 00
 }
 
 
