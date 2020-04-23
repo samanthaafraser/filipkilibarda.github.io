@@ -21,7 +21,8 @@ url: "" # the base hostname & protocol for your site, e.g. http://example.com
 github_username:  filipkilibarda
 locale: en-US
 
-logo: "/assets/imgs/grandwall.jpg"
+# logo: "/assets/imgs/grandwall.jpg"
+logo: "/assets/imgs/blah2.png"
 
 date_format: "%B %-d, %Y"
 
@@ -50,7 +51,7 @@ markdown: kramdown
 
 # theme: minima
 # remote_theme: "mmistakes/so-simple-theme@3.2.0"
-skin: "/assets/css/skins/dark.css"
+skin: "/assets/css/skins/default.css"
 
 search_full_content: true # can have performance implications for large sites
 
