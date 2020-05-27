@@ -3,6 +3,8 @@ layout: post
 title:  "Adding fuzzy history search to GDB"
 date:   2020-04-02 21:32:10 -0700
 permalink: posts/gdb-fuzzy-history
+toc: true
+toc_sticky: true
 categories: reversing implementation
 ---
 
@@ -31,33 +33,6 @@ categories: reversing implementation
 
 
 
-### A quick note on Bash history and Fzf
-
-Pairing infinite history with Fzf and Bash drastically increased the speed of my workflow, allowing
-my thoughts to flow with much shorter interruptions while recalling old commands.
-
-My bash history acts as a catalog, and **all it takes** is for me to remember just a word or two of
-an old command, and in a matter of seconds, I've got some long `docker` command from **last year**
-ready to go.
-
-As a CTF player, the speed gains here make a huge difference.
-
-
-### GDB history and Fzf??
-
-With such significant speed gains at the Bash prompt, I **really** wanted to have this at my GDB
-prompt as well.
-
-But unfortunately, Fzf doesn't support GDB history search out of the box. After reading [a post from
-the author of Fzf][fzf-gdb-issue] where they express complete uncertainty about whether it would be
-possible, I gave up on the idea entirely.
-
-Eventually, the thought crossed my mind that I could just modify GDB itself, rather than trying to
-jig it together with whatever interfaces GDB exposes already, and as it turns out, it's actually not
-too difficult at all.
-
-
-
 
 
 Intro
@@ -83,8 +58,45 @@ faster.
 
 
 
-Writing tips:
-- don't optimize prematurely. Just say what you want to say. Then cut it down later.
+
+
+<div class="notice" markdown="1">
+### A quick note on Bash history and Fzf
+
+Pairing infinite history with Fzf and Bash drastically increased the speed of my workflow, allowing
+my thoughts to flow with much shorter interruptions while recalling old commands.
+
+**My bash history acts as a catalog of old commands** and FZF helps me explore that catalog
+extremely quickly.
+
+All it takes is for me to remember just a word or two of an old command, and in a matter of seconds,
+I've got some long `docker` command from last year ready to go.
+
+As a CTF player, the speed gains here make a huge difference.
+</div>
+
+
+<div class="notice" markdown="1">
+### GDB history and Fzf??
+
+With such significant speed gains at the Bash prompt, I **really** wanted to have this at my GDB
+prompt as well.
+
+But unfortunately, Fzf doesn't support GDB history search out of the box. After reading [a post from
+the author of Fzf][fzf-gdb-issue] where they express complete uncertainty about whether it would be
+possible, I gave up on the idea entirely.
+
+Eventually, the thought crossed my mind that I could just modify GDB itself, rather than trying to
+jig it together with whatever interfaces GDB exposes already, and as it turns out, it's actually not
+too difficult at all.
+</div>
+
+
+
+
+<div class="notice--warning" markdown="1">
+#### Don't optimize prematurely. Just say what you want to say. Then cut it down later.
+</div>
 
 
 
@@ -129,9 +141,9 @@ match strings like `binding` or `key-binding`.
 
 This will lead us to an explanation of the builtin command.
 
->
-  Bash allows the current readline key bindings to be displayed or modified with the **bind**
-  builtin command.
+> Bash allows the current readline key bindings to be displayed or modified with the **bind**
+> builtin command.
+> <footer>man bash</footer>
 
 This leads us to one of our biggest clues. `bind` modifies **readline** keybindings.
 
@@ -148,7 +160,7 @@ So from now on, we know that we'll be primarily focused on messing around with R
 both Bash and GDB use Readline, we can use Bash as an example to guide how modify GDB's version of
 Readline.
 
-Back to looking at FZF and how it works with Bash.
+Back to looking at FZF.
 
 So this is the entry point for how FZF sets up history search with Bash.
 
@@ -156,8 +168,8 @@ So this is the entry point for how FZF sets up history search with Bash.
 bind -m emacs-standard -x '"\C-r": __fzf_history__'
 ```
 
-This means that pressing `Ctrl-r` will call `__fzf_history__` and paste the output into the current
-prompt.
+This means that pressing <kbd>Ctrl-r</kbd> will call `__fzf_history__` and paste the output into the
+current prompt.
 
 So can we do this in GDB?
 
@@ -173,136 +185,47 @@ talk about how to set up keybindings for GDB. Once again... unfortunately for us
 keybindings via `~/.inputrc` isn't nearly as powerful and doesn't let us set up keybindings that
 execute custom commands and paste the results into the current prompt.
 
-So we really need to look elsewhere.
+So `~/.inputrc` is really the extent of what we have to work with for Readline keybindings in GDB.
 
 See [this section](modify) for a more detailed analysis of whether this can be done without
 modifying GDB.
 
+This leaves us with just one option, *as far as I can tell*, and that's modifying Readline source
+code in GDB! Which also happens to be a lot more fun and creative :)
 
 
 
 
-Topics
-----------------------------------------------------------------------------------------------------
-- terminals, pseudo terminals
-- fzf reads over stdin, write to stdout, controls terminal via fd 3
-- looking at bash and how it handles fzf
-- looking at fzf bash source code to see what it's doing
-- compiling Gdb with debug symbols (turn off optimization)
-- how does readline work
-    - reads char by char
-    - writes back to terminal
-    - fzf can't simply write into the terminal because readline wouldn't see it
-- reversing readline?
-
-
-
-
-
-Haven't decided where to put these points yet
-----------------------------------------------------------------------------------------------------
-- reverse engineering is a creative process
-- there's no tool out there that can just automatically tell you everything you need to know
-- know the tools, and combine them creatively to break down the problem as fast you can
-- one of the goals is simply to do it quickly. If you use a tool and you're fed up with some aspect
-  of it and you want to modify it, you don't want to spend the next week trying to figure out how it
-  works. You want it done in a weekend or less.
-- given enough time anyone can reverse engineer anything, we want to do it quickly. That's where the
-  creativity comes in.
-- often we get trapped thinking that there's some special tool out there that we need to learn in
-  order to solve some task at hand. Yes there are lots of tools out there that are extremely useful,
-  but once you've got the basic tools figured out, you need to get out of the mindset of expecting
-  tools to solve all your issues. Start using the tools in creative ways.
-
-
-
-
-Conceptualizing terminal programs
+Static analysis --- GDB
 ----------------------------------------------------------------------------------------------------
 
-Having a decent understanding of how programs receive input from the keyboard is useful for
-understanding all this.
+[Time to grab GDB source code](#downloading-and-compiling-gdb) and start poking around!
 
-```
-                      __________________         ___________ 
- ____________        |                  |       |           |
-|            |       |                  |<------| Process   |
-|  Keyboard  |------>|                  |------>|   e.g.    |
-|____________|       |    Terminal      |       | /bin/bash |
-                     |                  |       |___________|
-                     |                  |                    
-                     |__________________|                    
-```
+We know that GDB uses Readline so lets try to figure out where the code for that is.
 
-- used to use [terminals](https://en.wikipedia.org/wiki/Computer_terminal).
-- similar now except we emulate the terminal hardware
-- implements the file interface
-- interactions with terminal device happen through read,write,ioctl,etc (just like any other device
-  or file on linux)
-- this is a simplified picture, but conceptualizing it this way is just enough for 99% of what we do
-- I hit button on keyboard, character gets sent to terminal device, terminal interprets that
-  character, then either sends it to the connected process or interprets it as a command for
-  something to do. E.g., kill connected process
-- the terminal settings can be changed via `stty` command (see `man stty`). For example, you can
-  disable `Ctrl-d` and `Ctrl-c` so that it doesn't kill the connected process. There are many
-  options. Terminals truely are complicated devices that largely go unnoticed.
-- TODO might be nice to do a section on how readline reads one char at a time from the terminal
+After downloading and extracting, listing the files in the root directory shows us a directory
+titled `readline`. 
+
+File count is pretty low so manually poking around is easy. 
+
+We can also take a guess and search for the string **history** and **search** using `grep` or `ag`
+in the hopes of finding some function or comment regarding history search.
 
 ```bash
-$ lsof -p 5606
-...
-bash    5606   fk    0u   CHR  136,3      0t0        6 /dev/pts/3
-bash    5606   fk    1u   CHR  136,3      0t0        6 /dev/pts/3
-bash    5606   fk    2u   CHR  136,3      0t0        6 /dev/pts/3
+# This matches lines that have both "history" AND "search" in them
+$ ag "history.*search|search.*history" readline/
 ```
 
+![ag search](/assets/imgs/screenshots/ag_search_history.png)
 
+Conveniently hinting that <kbd>Ctrl-r</kbd> maps to the function `rl_reverse_search_history`.
 
-What's Readline?
----------------------------------------------------------------------------------------------------
-- what is readline
-- [readline](https://en.wikipedia.org/wiki/GNU_Readline)
-- basically it's some code that's typically compiled into interactive command line apps. It provides
-  line editing capabilities, tab completion, etc. 
-- an example of line editing would be holding backspace to delete what you've typed so far at your
-  Bash prompt. Or simpler, using the `Ctrl-u` keybinding to delete everything behind the cursor.
-  Readline handles all that.
-- first terminal line editing is disabled (with ioctl)
-- Bash hands off control over the terminal to readline
-- readline handles reading the command
-- when new line is entered, readline hands the typed command over to Bash, which then executes it
-- when Bash is ready for a new command, it echos a new prompt and hands control over to Readline
-  again.
+**Aside**: Readline can be configured with **vi** or **emacs** like keybindings for line editing. If
+you're a vim user, you might like vi mode. The default is emacs though (e.g., <kbd>Ctrl-w</kbd> =
+delete word, <kbd>Ctrl-u</kbd> = delete everything behind cursor).
+{: .notice}
 
-
-
-
-
-TODO section title
-----------------------------------------------------------------------------------------------------
-
-- we know that gdb uses readline
-- [Instructions for downloading GDB](#downloading-and-compiling-gdb)
-- so lets just take a look at the code
-
-```bash
-$ ls -l readline/readline | grep keymap
--rw-rw-r-- 1 fk fk  37639 Apr  1 08:40 emacs_keymap.c
--rw-rw-r-- 1 fk fk   4072 Nov 19 01:10 keymaps.c
--rw-rw-r-- 1 fk fk   3260 Nov 19 01:10 keymaps.h
--rw-rw-r-- 1 fk fk  36529 Nov 19 01:10 vi_keymap.c
-```
-
-- a few files referring to keymap. This must be where readline maps keys to particular functions
-- I use the emacs keymap, so lets poke around `emacs_keymap.c`
-- everything is nicely commented so just search for `Control-r`
-
-```c
-  { ISFUNC, rl_reverse_search_history },	/* Control-r */
-```
-
-- and bam there's the default `Ctrl-r` function
-- so lets replace that with our own function that just prints "hello world!"
+Lets replace `rl_reverse_search_history`with our own function test function and see what happens.
 
 ```diff
 readline/readline/emacs_keymap.c
@@ -319,30 +242,59 @@ readline/readline/readline.h
 +extern int my_test PARAMS((int, int));
 ```
 
-Now we need to compile [Compiling GDB](#downloading-and-compiling-gdb)
-
-After compiling, the binary should be at `bin/gdb` relative to the build directory.
+After [compiling](#downloading-and-compiling-gdb), the binary should be at `bin/gdb` relative to the
+build directory.
 
 ![Hello world!](/assets/imgs/gdb_helloworld.gif)
 
-Hitting `Ctrl-r` a few times, prints `Hello world!` to the terminal!
+Pressing <kbd>Ctrl-r</kbd> a few times, prints `Hello world!` to the terminal!
 
-When I hit `Enter` after `Ctrl-r`, **nothing happens**, GDB just prints a new line because Readline
-thinks the prompt is empty. All we did was write text to the terminal. Readline is not aware of
-that.
+However, when I hit <kbd>Enter</kbd>, GDB just prints a newline. **Not quite what we wanted**.
 
-How can we get our `Hello world!` string to actually get into the prompt, not just displayed on the
-terminal?
+We want GDB to try and execute the string `Hello world!` when we press <kbd>Enter</kbd>, instead
+it's ignoring it.
 
-This is, after all, exactly what reverse search is doing, so if we continue our reverse engineering,
-surely we'll come upon a function that does exactly that.
+If we consider what's happening here, our test function simply writes the text to the terminal. All
+that happens is the text gets displayed, and GDB isn't aware of what's displayed on the terminal.
 
-- a natural step forward is to take a look at how `rl_reverse_search_history` is implemented, and
-  use that as a guide
+In order to fully comprehend this, we need to consider how GDB receives input from the user.
 
-- `rl_reverse_search_history` calls `rl_search_history`
+Here's what happens when I press a key:
+1. Key is written to the **terminal device**
+2. Terminal device silently sends the character off to the controlling program (GDB) (see `man
+   stty`)
+3. Readline receives the character
+4. Readline stores it in an internal buffer corresponding to the current prompt
+5. Readline **writes the character back to the terminal** --- this time the terminal displays the
+   character
+6. If the character is a newline, Readline hands control over to GDB to execute the command that was
+   typed into the prompt
 
-Simplified version
+**Terminal device**: terminal devices emulate old school physical terminals that people used to use
+many years ago.
+{: .notice}
+
+So we need our string to end up in the internal buffer for the current prompt and that'll be our
+next few steps in this investigation.
+
+A natural place to start is `rl_reverse_search_history`.
+
+<div class="notice" markdown="1">
+#### Finding function definitions
+
+A quick way to find function definitions in C/C++ projects is to use `cscope` 
+
+```bash
+$ sudo apt install cscope
+# Recursively index all files under the current directory
+$ cscope -R
+```
+
+or `ctags` if you're a vim user with <kbd>Ctrl-]</kbd> = jump to definition <kbd>Ctrl-t</kbd> = jump
+back.
+</div>
+
+The function definition shows that it calls `rl_search_history`.
 
 ```c
 static int rl_search_history (int direction, int invoking_key) {
@@ -363,28 +315,23 @@ static int rl_search_history (int direction, int invoking_key) {
 }
 ```
 
-- key take aways:
+The key take aways are:
    - initialize the search (presumably this is where the history list is set up?)
-   - display the search string (`(reverse-i-search)': ...`)
+   - display the search string `(reverse-i-search)': ...`
    - loop
       - read char
       - do some action based on which character was typed i.e., either 
         - update the search string and display the updated search result
         - end the search and paste the result into the prompt
 
-- looking at `rl_isearch_init`
-```c
-static _rl_search_cxt *_rl_isearch_init (int direction) {
-    ...
-    HIST_ENTRY **hlist = history_list ();
-    ...
-}
-```
-- and the `history_list` function is all we care about really, so that takes a big peice out of the
-  puzzle.
-- Now we know how to get the full history - conveniently, this includes the history entries from
-  both the current session and the file based history from all previous sessions in `.gdb_history`
-  TODO See section on setting up infinite history for all sessions
+Looking at `_rl_isearch_init`
+
+![\_rl_isearch_init](/assets/imgs/screenshots/rl_isearch_init.png)
+
+A history list is something we're going to need, so just save that for later. Conveniently, this
+includes the history entries from both the current session and the file based history from all
+previous sessions in `.gdb_history`.
+
 - We still haven't answered the question of how to get our `Hello world!` string into the current
   prompt though
 - unfortunately, it wasn't very clear to me how the result is pasted into the prompt
@@ -398,57 +345,11 @@ static _rl_search_cxt *_rl_isearch_init (int direction) {
 
 - TODO add section about `rl_line_buffer`, the current contents of the prompt
 
-Now we have all the missing peices!
-
-Let build this up incrementally. Back to our `Hello world!` example:
-
-If instead we use `rl_insert_text`, instead of just `printf`, then hitting `Ctrl-r` will truely
-paste `Hello world!` into our current prompt in addition to writing it to the terminal.
-
-```diff
- int my_test(int sign, int key) {
--  printf("Hello world!");
-+  rl_insert_text("Hello world!");
-   return 0;
- }
-```
-
-![Hello world!](/assets/imgs/gdb_helloworld2.gif)
-
-Now GDB is trying to run our `Hello world!` string!
-
-So the path forward is clear. 
-
-1. call Fzf
-2. pass in the current history
-3. get output
-4. call `rl_insert_text`
-
-1. call Fzf
-  - Set up read and write pipes (via `pipe` syscall)
-  - Fork a new process
-  - launch Fzf via `execve` syscall
-2. pass in the current history
-  - call `history_list` function
-  - write result into write pipe
-  - fzf will receive that as its input
-3. get output
-  - Read from the read pipe (this will be the output of Fzf)
-4. call `maybe_make_readline_line`
-  - Interally this calls `rl_insert_text`
-  - pass in the output we got from Fzf
-
-If you're not interested in a detailed explanation of how to do this, checkout my github page TODO
-
-XXX
 
 
 
-# Appendix
----
-
-
-## Reversing Bash
+Dynamic analysis --- Bash
+---------------------------------------------------------------------------------------------------
 - know that both Bash and GDB use Readline
 
 GDB doesn't give us the `bind -x` command like Bash does, so our quickest way forward is to just see
@@ -479,8 +380,8 @@ $ file /bin/bash
 /bin/bash: ELF 64-bit LSB ... for GNU/Linux 3.2.0, stripped
 ```
 
-We'll use the `strace` command to trace the system calls that Bash makes while we press `Ctrl-r`,
-then use that information to set a catchpoint in GDB.
+We'll use the `strace` command to trace the system calls that Bash makes while we press
+<kbd>Ctrl-r</kbd>, then use that information to set a catchpoint in GDB.
 
 Run the newly compiled Bash and grab it's PID
 
@@ -497,7 +398,8 @@ strace: Process 6225 attached
 pselect6(1, [0], NULL, NULL, NULL, {[], 8}
 ```
 
-Now we can interact with Bash and watch the system calls that it makes when we press `Ctrl-r`.
+Now we can interact with Bash and watch the system calls that it makes when we press
+<kbd>Ctrl-r</kbd>.
 
 ```bash
 $ strace -p 6225
@@ -515,8 +417,8 @@ the point where it makes the `clone` call, we could examine the backtrace to see
 were called leading up to that!
 
 Kill the `strace` process and run `gdb -p 6225` followed by `catch syscall clone` and `continue`.
-Pressing `Ctrl-r` in Bash now stops us at the syscall in GDB. The `backtrace` or `bt` command will
-dump out the call stack.
+Pressing <kbd>Ctrl-r</kbd> in Bash now stops us at the syscall in GDB. The `backtrace` or `bt`
+command will dump out the call stack.
 
 ```bash
 ...
@@ -569,7 +471,68 @@ Now we have all the components we need to get this working!
 
 
 
-## Infinite GDB history
+
+Wrapping up
+---------------------------------------------------------------------------------------------------
+
+Now we have all the missing peices!
+
+Let build this up incrementally. Back to our `Hello world!` example:
+
+If instead we use `rl_insert_text`, instead of just `printf`, then hitting <kbd>Ctrl-r</kbd> will
+truely paste `Hello world!` into our current prompt in addition to writing it to the terminal.
+
+```diff
+ int my_test(int sign, int key) {
+-  printf("Hello world!");
++  rl_insert_text("Hello world!");
+   return 0;
+ }
+```
+
+![Hello world!](/assets/imgs/gdb_helloworld2.gif)
+
+Now GDB is trying to run our `Hello world!` string!
+
+So the path forward is clear. 
+
+1. call Fzf
+2. pass in the current history
+3. get output
+4. call `rl_insert_text`
+
+1. call Fzf
+  - Set up read and write pipes (via `pipe` syscall)
+  - Fork a new process
+  - launch Fzf via `execve` syscall
+2. pass in the current history
+  - call `history_list` function
+  - write result into write pipe
+  - fzf will receive that as its input
+3. get output
+  - Read from the read pipe (this will be the output of Fzf)
+4. call `maybe_make_readline_line`
+  - Interally this calls `rl_insert_text`
+  - pass in the output we got from Fzf
+
+If you're not interested in a detailed explanation of how to do this, checkout my github page TODO
+
+XXX
+
+
+
+
+
+Appendix
+===================================================================================================
+
+
+---
+
+
+
+Infinite GDB history
+---------------------------------------------------------------------------------------------------
 You'll also probably want to set up infinite GDB history; add this to `~/.gdbinit`.
 
 ```bash
@@ -584,7 +547,8 @@ set history filename ~/.gdb_eternal_history
 
 
 <a name="modify"></a>
-## Wait, do we need to modify GDB source to pull this off?
+Wait, do we need to modify GDB source to pull this off?
+----------------------------------------------------------------------------------------------------
 
 Poking around `fzf/shell/key-bindings.bash`, we see that prior to `bash 4.0`, `fzf` used a super
 ugly command that didn't need `-x`.
@@ -641,6 +605,10 @@ It would be tricky
 - take smaller pics of the github issue to reduce cognitive overhead
 - change "hitting" to "pressing"
 - add section about gdbinit commands that give you inf history
+- include info about linux distro
+- So it turns out that you almost certainly can't pull this off without modifying readline in GDB.
+  - See `bind -P | fzf` and look up `\e\C-e` which maps to shell expand. This is what execs the
+    fzf_history command wrapped in $(). Only bash has that readline function.
 
 
 
@@ -736,3 +704,104 @@ The order in which I did things while reversing
 - Static and dynamic anaylsis tips using tools like `ctags`, `gdb`, `strace`
 - A more complete mental model of what happens from the moment I press the key on my keyboard to the
   moment that my running process receives my keypress.
+
+
+
+
+Topics
+----------------------------------------------------------------------------------------------------
+- terminals, pseudo terminals
+- fzf reads over stdin, write to stdout, controls terminal via fd 3
+- looking at bash and how it handles fzf
+- looking at fzf bash source code to see what it's doing
+- compiling Gdb with debug symbols (turn off optimization)
+- how does readline work
+    - reads char by char
+    - writes back to terminal
+    - fzf can't simply write into the terminal because readline wouldn't see it
+- reversing readline?
+
+
+
+
+
+Haven't decided where to put these points yet
+----------------------------------------------------------------------------------------------------
+- reverse engineering is a creative process
+- there's no tool out there that can just automatically tell you everything you need to know
+- know the tools, and combine them creatively to break down the problem as fast you can
+- one of the goals is simply to do it quickly. If you use a tool and you're fed up with some aspect
+  of it and you want to modify it, you don't want to spend the next week trying to figure out how it
+  works. You want it done in a weekend or less.
+- given enough time anyone can reverse engineer anything, we want to do it quickly. That's where the
+  creativity comes in.
+- often we get trapped thinking that there's some special tool out there that we need to learn in
+  order to solve some task at hand. Yes there are lots of tools out there that are extremely useful,
+  but once you've got the basic tools figured out, you need to get out of the mindset of expecting
+  tools to solve all your issues. Start using the tools in creative ways.
+
+
+
+
+Conceptualizing terminal programs
+----------------------------------------------------------------------------------------------------
+
+Having a decent understanding of how programs receive input from the keyboard is useful for
+understanding all this.
+
+```
+                      __________________         ___________ 
+ ____________        |                  |       |           |
+|            |       |                  |<------| Process   |
+|  Keyboard  |------>|                  |------>|   e.g.    |
+|____________|       |    Terminal      |       | /bin/bash |
+                     |                  |       |___________|
+                     |                  |                    
+                     |__________________|                    
+```
+
+- used to use [terminals](https://en.wikipedia.org/wiki/Computer_terminal).
+- similar now except we emulate the terminal hardware
+- implements the file interface
+- interactions with terminal device happen through read,write,ioctl,etc (just like any other device
+  or file on linux)
+- this is a simplified picture, but conceptualizing it this way is just enough for 99% of what we do
+- I hit button on keyboard, character gets sent to terminal device, terminal interprets that
+  character, then either sends it to the connected process or interprets it as a command for
+  something to do. E.g., kill connected process
+- the terminal settings can be changed via `stty` command (see `man stty`). For example, you can
+  disable <kbd>Ctrl-d</kbd> and <kbd>Ctrl-c</kbd> so that it doesn't kill the connected process.
+  There are many options. Terminals truely are complicated devices that largely go unnoticed.
+- TODO might be nice to do a section on how readline reads one char at a time from the terminal
+
+```bash
+$ lsof -p 5606
+...
+bash    5606   fk    0u   CHR  136,3      0t0        6 /dev/pts/3
+bash    5606   fk    1u   CHR  136,3      0t0        6 /dev/pts/3
+bash    5606   fk    2u   CHR  136,3      0t0        6 /dev/pts/3
+```
+
+
+
+What's Readline?
+---------------------------------------------------------------------------------------------------
+- what is readline
+- [readline](https://en.wikipedia.org/wiki/GNU_Readline)
+- basically it's some code that's typically compiled into interactive command line apps. It provides
+  line editing capabilities, tab completion, etc. 
+- an example of line editing would be holding backspace to delete what you've typed so far at your
+  Bash prompt. Or simpler, using the <kbd>Ctrl-u</kbd> keybinding to delete everything behind the
+  cursor.
+  Readline handles all that.
+- first terminal line editing is disabled (with ioctl)
+- Bash hands off control over the terminal to readline
+- readline handles reading the command
+- when new line is entered, readline hands the typed command over to Bash, which then executes it
+- when Bash is ready for a new command, it echos a new prompt and hands control over to Readline
+  again.
+
+
+
+
+
