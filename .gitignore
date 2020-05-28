@@ -8,3 +8,5 @@ vendor/
 todo.txt
 
 !_sass/so-simple/vendor/
+
+node_modules/
