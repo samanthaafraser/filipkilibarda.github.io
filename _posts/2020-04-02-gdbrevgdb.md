@@ -102,96 +102,70 @@ too difficult at all.
 
 Getting Started
 ----------------------------------------------------------------------------------------------------
-A natural place to start, is to take a look at how FZF implements history search in Bash, then try
-to replicate that in some way (in our case we'll be modifying and compiling GDB).
+A natural place to start was to take a look at how FZF implemented history search in Bash, then try
+to replicate that in some way.
 
-Running the install script for FZF shows that it adds a line `~/.bashrc`
+I ran the install script for FZF to get a sense for what it did, and found that it added a line to
+my `~/.bashrc` that sourced `~/.fzf.bash`.
 
-```bash
-[ -f ~/.fzf.bash ] && source ~/.fzf.bash
-```
-
-At the end of `.fzf.bash` we have 
-
-```bash
-source "$HOME/fzf/shell/key-bindings.bash"
-```
-
-And at the end of `key-bindings.bash` we have
+I followed the reference to `~/.fzf.bash` and found that it sourced keybindings from
+`fzf/shell/key-bindings.bash`. This was where I expected to find out how it set up <kbd>Ctrl-r</kbd>
+history search. Sure enough at the bottom I found this line:
 
 ```bash
 bind -m emacs-standard -x '"\C-r": __fzf_history__'
 ```
 
-`bind` is a Bash builtin command. Normally when we run programs via the Bash prompt, we're actually
-running another file, for example
+The call to bind was straight forward. Whenever <kbd>Ctrl-r</kbd> was pressed, Bash would call
+`__fzf_history__`, which presumably just dumped the history and piped it into FZF.
 
-```bash
-$ which ls
-/bin/ls
-```
-
-Bash builtin commands are different in that they are *built into* the Bash executable. So `which
-bind` shouldn't return anything.
-
-We can issue `man bash` to get a comprehensive explanation of all the builtin commands. To search
-for the `bind` command, type `/` then `\<bind\>`. This will find all occurences of the word `bind`
-where `\<` and `\>` are special characters that match `word start` and `word end` so that we don't
-match strings like `binding` or `key-binding`.
-
-This will lead us to an explanation of the builtin command.
+Digging through `man bash` and searching for "bind" gave me the full documentation on how the `bind`
+builtin worked.
 
 > Bash allows the current readline key bindings to be displayed or modified with the **bind**
 > builtin command.
 > <footer>man bash</footer>
 
-This leads us to one of our biggest clues. `bind` modifies **readline** keybindings.
+The key takeaway here was that `bind` modified **readline** keybindings.
 
-So what's Readline?
+<div class="notice" markdown="1">
+**What's Readline?**
 
 Readline is one of the most popular text editors that no one knows about :)
 
-[See this for more details](#whats-readline), but basically Readline is a piece of software that's
-compiled into many command line programs, including GDB and Bash, that provides line editing
-capabilties and history. The entire history searching and tracking mechanism in Bash is done by
-Readline.
+Readline is a piece of software that's compiled into many command line programs, including GDB and
+Bash, that provides line editing capabilties and history. In essense, Readline is what's responsible
+for reading commands from users, then it hands control off to whatever program is using it, e.g.,
+Bash.
+</div>
 
-So from now on, we know that we'll be primarily focused on messing around with Readline, and since
-both Bash and GDB use Readline, we can use Bash as an example to guide how modify GDB's version of
-Readline.
+Because <kbd>Ctrl-r</kbd> history search in GDB worked just like <kbd>Ctrl-r</kbd> history search in
+Bash, it was clear that they both used Readline.
 
-Back to looking at FZF.
+At this point I was wondering if GDB had it's own `bind`-like mechanism and if I could just use
+that. But from my previous research, it was quite clear that it wasn't going to be **that** easy.
 
-So this is the entry point for how FZF sets up history search with Bash.
+As it turned out, `bind` was a builtin command specific to Bash, and..... GDB didn't have it's own
+version of it.
 
-```bash
-bind -m emacs-standard -x '"\C-r": __fzf_history__'
-```
+Well, actually it did --- in a way.
 
-This means that pressing <kbd>Ctrl-r</kbd> will call `__fzf_history__` and paste the output into the
-current prompt.
+I googled around for "GDB keybindings", which lead me to [this page][gdb-keybindings-docs]. The GDB
+method used the standard Readline configuration file `~/.inputrc`, which mapped key sequences to
+either 
 
-So can we do this in GDB?
+  1. other key sequences, or 
+  2. Readline commands (`man readline`)
 
-Unfortunately the `bind` command is not included in the Readline project, it's only in Bash. So we
-can't use `bind` in GDB. But hey, if Bash has a `bind` command, maybe we can just copy paste into
-GDB?
+I needed a keybinding that executed a custom script or command and pasted the result into the
+current command prompt, and neither of those two options were able do that.
 
-Nevertheless, Readline can still be configured with keybindings even without the `bind` command.
-This is done via the `~/.inputrc` file.
+I wanted to completely understand why the `~/.inputrc` method was incapable, so I took a deep dive
+and gave a short explanation [here](modify).
 
-Googling around for "GDB keybindings" lead me to [this page][gdb-keybindings-docs] where they
-talk about how to set up keybindings for GDB. Once again... unfortunately for us, configuring
-keybindings via `~/.inputrc` isn't nearly as powerful and doesn't let us set up keybindings that
-execute custom commands and paste the results into the current prompt.
-
-So `~/.inputrc` is really the extent of what we have to work with for Readline keybindings in GDB.
-
-See [this section](modify) for a more detailed analysis of whether this can be done without
-modifying GDB.
-
-This leaves us with just one option, *as far as I can tell*, and that's modifying Readline source
-code in GDB! Which also happens to be a lot more fun and creative :)
+So my only option was to modify the Readline source code in GDB. Which I was actually quite thankful
+for because hacking together some super ugly thing with `~/.inputrc` wouldn't have been nearly as
+fun.
 
 
 
