@@ -22,7 +22,8 @@ github_username:  filipkilibarda
 locale: en-US
 
 # logo: "/assets/imgs/grandwall.jpg"
-logo: "/assets/imgs/blah2.png"
+# logo: "/assets/imgs/header.png"
+logo:
 
 date_format: "%B %-d, %Y"
 
