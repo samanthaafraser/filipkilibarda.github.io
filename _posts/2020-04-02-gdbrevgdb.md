@@ -17,17 +17,10 @@ categories: reversing implementation
 [gdb-keybindings-docs]: https://ftp.gnu.org/old-gnu/Manuals/gdb/html_node/gdb_246.html
 
 
-- [TL;DR](#tldr)
-- [What you'll get from this post](#what-youll-get-from-this-post)
-- [What's `readline`?](#)
-- [Appendix](#appendix)
-  - [Reversing Bash](#reversing-bash)
-  - [Wait, do we **really** need to modify GDB source to pull this off?](#modify)
-  - [Has this been done?](#has-this-been-done)
-
 <br/>
 
-# [Get the patch and installation instructions here][gdb-patch]
+# [Get the patch and installation instructions here][gdb-patch] 
+{: .no_toc}
 
 <br/>
 
@@ -36,7 +29,7 @@ categories: reversing implementation
 
 
 Intro
-----------------------------------------------------------------------------------------------------
+====================================================================================================
 
 In this post I'll walk through the thought process that I took to reverse engineer the command
 prompt portion of GDBs code base and implement a small but useful modification.
@@ -101,7 +94,7 @@ too difficult at all.
 
 
 Getting Started
-----------------------------------------------------------------------------------------------------
+====================================================================================================
 A natural place to start was to take a look at how FZF implemented history search in Bash, then try
 to replicate that in some way.
 
@@ -171,7 +164,7 @@ fun.
 
 
 Static analysis --- GDB
-----------------------------------------------------------------------------------------------------
+====================================================================================================
 
 [Time to grab GDB source code](#downloading-and-compiling-gdb) and start poking around!
 
@@ -323,7 +316,7 @@ previous sessions in `.gdb_history`.
 
 
 Dynamic analysis --- Bash
----------------------------------------------------------------------------------------------------
+====================================================================================================
 - know that both Bash and GDB use Readline
 
 GDB doesn't give us the `bind -x` command like Bash does, so our quickest way forward is to just see
@@ -447,7 +440,7 @@ Now we have all the components we need to get this working!
 
 
 Wrapping up
----------------------------------------------------------------------------------------------------
+====================================================================================================
 
 Now we have all the missing peices!
 
@@ -595,19 +588,22 @@ It would be tricky
 - A starting GIF does a better showcase of how actually useful it is to have fzf
 
 
+Downloading and Compiling
+====================================================================================================
 
-# Downloading and Compiling GDB
+GDB
+-----------------------------------------------------------------------------------------------------
 TODO Add section about build reqs
 bison # sometimes
 build-essential
-## Downloading
+### Downloading
 ```bash
 # See all available versions here https://ftp.gnu.org/gnu/gdb/
 wget https://ftp.gnu.org/gnu/gdb/gdb-9.1.tar.gz
 # Extract
 tar xzvf gdb-9.1.tar.gz
 ```
-## Compiling
+### Compiling
 ```bash
 # This is the directory where we'll build GDB
 mkdir build-gdb-9.1 && cd build-gdb-9.1
@@ -629,11 +625,11 @@ make -j $(nproc) && make install
 
 
 
-
-# Downloading and Compiling Bash
+Bash
+-----------------------------------------------------------------------------------------------------
 TODO Add section about build reqs
 build-essential
-## Downloading
+### Downloading
 ```bash
 # See all available versions https://ftp.gnu.org/gnu/bash/
 wget https://ftp.gnu.org/gnu/bash/bash-5.0.tar.gz
@@ -641,7 +637,7 @@ wget https://ftp.gnu.org/gnu/bash/bash-5.0.tar.gz
 tar xzvf bash-5.0.tar.gz
 ```
 
-## Compiling
+### Compiling
 ```bash
 # This is the directory where we'll build Bash
 mkdir build-bash-5.0 && cd build-bash-5.0
@@ -656,63 +652,6 @@ make -j $(nproc) && make install
 
 
 
-![this issue](/assets/imgs/githubissue.png)
-
-
-
-## REMINDER FOR MYSELF
-The order in which I did things while reversing
-- I poked around gdb source looking at readline specifically
-- I messed around with callgrind
-- I found that `_rl_dispatch` was responsible for choosing the function to exec from the keymap
-- once I had that I decided I'd just copy what bash was doing
-- NOTE the reason I was looking at bash in the first place, was actually just to see how they
-  implemented the function that runs your custom command
-- so set a break at `_rl_dispatch` and started debugging bash
-- then I basically copied bash's implementation to gdb
-
-
-
-## What you'll get from this post
-- Tips for quickly nailing down where your changes need to go
-- Static and dynamic anaylsis tips using tools like `ctags`, `gdb`, `strace`
-- A more complete mental model of what happens from the moment I press the key on my keyboard to the
-  moment that my running process receives my keypress.
-
-
-
-
-Topics
-----------------------------------------------------------------------------------------------------
-- terminals, pseudo terminals
-- fzf reads over stdin, write to stdout, controls terminal via fd 3
-- looking at bash and how it handles fzf
-- looking at fzf bash source code to see what it's doing
-- compiling Gdb with debug symbols (turn off optimization)
-- how does readline work
-    - reads char by char
-    - writes back to terminal
-    - fzf can't simply write into the terminal because readline wouldn't see it
-- reversing readline?
-
-
-
-
-
-Haven't decided where to put these points yet
-----------------------------------------------------------------------------------------------------
-- reverse engineering is a creative process
-- there's no tool out there that can just automatically tell you everything you need to know
-- know the tools, and combine them creatively to break down the problem as fast you can
-- one of the goals is simply to do it quickly. If you use a tool and you're fed up with some aspect
-  of it and you want to modify it, you don't want to spend the next week trying to figure out how it
-  works. You want it done in a weekend or less.
-- given enough time anyone can reverse engineer anything, we want to do it quickly. That's where the
-  creativity comes in.
-- often we get trapped thinking that there's some special tool out there that we need to learn in
-  order to solve some task at hand. Yes there are lots of tools out there that are extremely useful,
-  but once you've got the basic tools figured out, you need to get out of the mindset of expecting
-  tools to solve all your issues. Start using the tools in creative ways.
 
 
 
@@ -779,3 +718,32 @@ What's Readline?
 
 
 
+![this issue](/assets/imgs/githubissue.png)
+
+
+REMINDER FOR MYSELF ---------------------------------------------------------------------
+The order in which I did things while reversing
+- I poked around gdb source looking at readline specifically
+- I messed around with callgrind
+- I found that `_rl_dispatch` was responsible for choosing the function to exec from the keymap
+- once I had that I decided I'd just copy what bash was doing
+- NOTE the reason I was looking at bash in the first place, was actually just to see how they
+  implemented the function that runs your custom command
+- so set a break at `_rl_dispatch` and started debugging bash
+- then I basically copied bash's implementation to gdb
+
+
+
+Haven't decided where to put these points yet ----------------------------------------------------
+- reverse engineering is a creative process
+- there's no tool out there that can just automatically tell you everything you need to know
+- know the tools, and combine them creatively to break down the problem as fast you can
+- one of the goals is simply to do it quickly. If you use a tool and you're fed up with some aspect
+  of it and you want to modify it, you don't want to spend the next week trying to figure out how it
+  works. You want it done in a weekend or less.
+- given enough time anyone can reverse engineer anything, we want to do it quickly. That's where the
+  creativity comes in.
+- often we get trapped thinking that there's some special tool out there that we need to learn in
+  order to solve some task at hand. Yes there are lots of tools out there that are extremely useful,
+  but once you've got the basic tools figured out, you need to get out of the mindset of expecting
+  tools to solve all your issues. Start using the tools in creative ways.
