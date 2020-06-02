@@ -20,8 +20,10 @@ layout: default
         {% include page-categories.html %}
         {% include page-tags.html %}
         {% if page.toc %}
-          <h3 class="page-taxonomies-title">Content</h3>
-          {% include toc.html sanitize=true html=content h_min=1 h_max=2 class="toc__menu" %}
+          <nav class="toc">
+            <h3 class="page-taxonomies-title">Content</h3>
+            {% include toc.html sanitize=true html=content h_min=1 h_max=2 class="toc__menu" %}
+          </nav>
         {% endif %}
       </div>
 
