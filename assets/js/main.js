@@ -15,6 +15,22 @@ $(document).ready(function() {
   // add lightbox class to all image links
   $("a[href$='.jpg'], a[href$='.png'], a[href$='.gif']").attr("data-lity", "");
 
+  var count = 0;
+  var toc = document.querySelector("nav.toc");
+
+  function onActivate(event) {
+    if (count++ == 0) {
+      toc.classList.add("gumshoe-activated");
+    }
+  }
+  function onDeactivate(event) {
+    if (--count == 0) {
+      toc.classList.remove("gumshoe-activated");
+    }
+  }
+  document.addEventListener('gumshoeActivate', onActivate);
+  document.addEventListener('gumshoeDeactivate', onDeactivate);
+
   // Gumshoe scroll spy init
   if($("nav.toc").length > 0) {
     var spy = new Gumshoe("nav.toc a", {
@@ -27,24 +43,11 @@ $(document).ready(function() {
       nestedClass: "active", // applied to the parent items
 
       // Offset & reflow
-      offset: 20, // how far from the top of the page to activate a content area
+      offset: 200, // how far from the top of the page to activate a content area
       reflow: true, // if true, listen for reflows
 
       // Event support
       events: true // if true, emit custom events
     });
   }
-
-  // Add anchors for headings
-  $('.page__content').find('h1, h2, h3, h4, h5, h6').each(function() {
-    var id = $(this).attr('id');
-    if (id) {
-      var anchor = document.createElement("a");
-      anchor.className = 'header-link';
-      anchor.href = '#' + id;
-      anchor.innerHTML = '<span class=\"sr-only\">Permalink</span><i class=\"fa fa-link\"></i>';
-      anchor.title = "Permalink";
-      $(this).append(anchor);
-    }
-  });
 });
