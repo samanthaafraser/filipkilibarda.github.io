@@ -284,3 +284,24 @@
     max-width: $main-sidebar-max-width;
   }
 }
+
+.toc__menu {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  position: sticky; // TODO add breakpoint
+  top: 20px;
+  padding: 0;
+  margin: 0;
+  li {
+    list-style: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    ul {
+      padding-left: 1.5em;
+      margin: 0;
+    }
+  }
+}
